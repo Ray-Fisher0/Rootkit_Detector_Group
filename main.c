@@ -12,9 +12,9 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Rootkit Detector");
 MODULE_DESCRIPTION("Periodic syscall hook rootkit detector");
 
-// Kernel text section boundaries (defined by linker script)
-extern char _stext[];
-extern char _etext[];
+// Kernel text section boundaries (obtained via kallsyms)
+static unsigned long kernel_text_start;
+static unsigned long kernel_text_end;
 
 #define PROC_NAME "rootkit_scan"
 #define SCAN_INTERVAL (30 * HZ)   // HZ is the number of jiffies per second
@@ -30,8 +30,8 @@ static int last_hooks_found;
 // Helper function to check if an address is within the kernel text section
 static bool addr_in_kernel_text(unsigned long addr)
 {
-    return (addr >= (unsigned long)_stext &&
-            addr <  (unsigned long)_etext);
+    return (addr >= kernel_text_start &&
+            addr <  kernel_text_end);
 }
 
 // Scanning Function that checks syscall table entries for hooks
@@ -141,6 +141,14 @@ static int __init module_start(void)
 
     if (!syscall_table) {
         printk(KERN_ERR "cannot find sys_call_table\n");
+        return -EINVAL;
+    }
+
+    kernel_text_start = kallsyms_lookup_name("_stext");
+    kernel_text_end = kallsyms_lookup_name("_etext");
+
+    if (!kernel_text_start || !kernel_text_end) {
+        printk(KERN_ERR "cannot find kernel text boundaries\n");
         return -EINVAL;
     }
 
