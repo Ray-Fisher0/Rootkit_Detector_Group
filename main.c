@@ -1,181 +1,141 @@
-#include <linux/init.h>
-#include <linux/kernel.h>
+// SPDX-License-Identifier: GPL
 #include <linux/module.h>
-#include <linux/kallsyms.h>
-#include <linux/syscalls.h>
-#include <linux/timer.h>
-#include <linux/jiffies.h>
-#include <linux/proc_fs.h>
+#include <linux/kprobes.h>
 #include <linux/uaccess.h>
+#include <linux/sched.h>
+#include <linux/version.h>
 
+MODULE_DESCRIPTION("Kprobe-based watcher for kallsyms_lookup_name('sys_call_table')");
+MODULE_AUTHOR("Your Name");
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Rootkit Detector");
-MODULE_DESCRIPTION("Periodic syscall hook rootkit detector");
 
-// Kernel text section boundaries (obtained via kallsyms)
-static unsigned long kernel_text_start;
-static unsigned long kernel_text_end;
+#define MAX_SYM_NAME   64
+#define WATCH1         "sys_call_table"
+#define WATCH2         "ia32_sys_call_table"
 
-#define PROC_NAME "rootkit_scan"
-#define SCAN_INTERVAL (30 * HZ)   // HZ is the number of jiffies per second
-
-static unsigned long **syscall_table;
-static struct timer_list scan_timer;
-static struct proc_dir_entry *proc_entry;
-
-static unsigned long last_scan_jiffies;
-static int last_hooks_found;
-
-
-// Helper function to check if an address is within the kernel text section
-static bool addr_in_kernel_text(unsigned long addr)
-{
-    return (addr >= kernel_text_start &&
-            addr <  kernel_text_end);
-}
-
-// Scanning Function that checks syscall table entries for hooks
-static void scan_syscalls(void)
-{
-    int i;
-    unsigned long addr;
-    int suspicious = 0;
-
-    printk(KERN_INFO "[rkdetector] scanning syscalls...\n");
-
-    for (i = 0; i < NR_syscalls; i++) {
-        addr = (unsigned long)syscall_table[i];
-
-        if (!addr_in_kernel_text(addr)) {
-            suspicious++;
-            printk(KERN_WARNING
-                   "[rkdetector] HOOK? syscall %d -> %px\n",
-                   i, (void *)addr);
-        }
-    }
-
-    last_hooks_found = suspicious;
-    last_scan_jiffies = jiffies;
-
-    printk(KERN_INFO
-           "[rkdetector] scan finished, # of suspicious=%d\n",
-           suspicious);
-}
-
-
-// Timer
-static void timer_callback(struct timer_list *t)
-{
-    scan_syscalls();
-
-    // reschedule 
-    mod_timer(&scan_timer, jiffies + SCAN_INTERVAL);
-}
-
-
-// /proc interface for manual scan trigger and status reporting
-
-static ssize_t proc_read(struct file *file,
-                         char __user *buf,
-                         size_t count,
-                         loff_t *ppos)
-{
-    char msg[256];
-    int len;
-
-    if (*ppos > 0)
-        return 0;
-
-    len = snprintf(msg, sizeof(msg),
-                   "Rootkit detector status\n"
-                   "Last scan: %lu seconds ago\n"
-                   "Suspicious hooks: %d\n"
-                   "Write 'scan' to trigger\n",
-                   (jiffies - last_scan_jiffies) / HZ,
-                   last_hooks_found);
-
-    if (copy_to_user(buf, msg, len))
-        return -EFAULT;
-
-    *ppos = len;
-    return len;
-}
-
-
-static ssize_t proc_write(struct file *file,
-                          const char __user *buf,
-                          size_t count,
-                          loff_t *ppos)
-{
-    char kbuf[16];
-
-    if (count > sizeof(kbuf)-1)
-        return -EINVAL;
-
-    if (copy_from_user(kbuf, buf, count))
-        return -EFAULT;
-
-    kbuf[count] = '\0';
-
-    if (strncmp(kbuf, "scan", 4) == 0) {
-        printk(KERN_INFO "[rkdetector] manual scan requested\n");
-        scan_syscalls();
-    }
-
-    return count;
-}
-
-
-static const struct proc_ops proc_fops = {
-    .proc_read  = proc_read,
-    .proc_write = proc_write,
+struct lookup_event {
+    char name[MAX_SYM_NAME];
+    bool matched;
+    unsigned long caller_ip;
+    pid_t pid;
+    char comm[TASK_COMM_LEN];
 };
 
-
-// Module initialization and cleanup
-static int __init module_start(void)
+/*
+ * Helpers to safely copy a C-string from a kernel pointer without faulting.
+ */
+static int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
 {
-    printk(KERN_INFO "[rkdetector] loading...\n");
-
-    syscall_table = (unsigned long **)kallsyms_lookup_name("sys_call_table");
-
-    if (!syscall_table) {
-        printk(KERN_ERR "cannot find sys_call_table\n");
+    int ret;
+    if (!dst || !src || dst_len == 0)
         return -EINVAL;
-    }
 
-    kernel_text_start = kallsyms_lookup_name("_stext");
-    kernel_text_end = kallsyms_lookup_name("_etext");
-
-    if (!kernel_text_start || !kernel_text_end) {
-        printk(KERN_ERR "cannot find kernel text boundaries\n");
-        return -EINVAL;
-    }
-
-    // create /proc entry
-    proc_entry = proc_create(PROC_NAME, 0666, NULL, &proc_fops);
-
-    // setup timer
-    timer_setup(&scan_timer, timer_callback, 0);
-    mod_timer(&scan_timer, jiffies + SCAN_INTERVAL);
-
-    scan_syscalls();
-
-    printk(KERN_INFO "[rkdetector] loaded successfully\n");
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0)
+    ret = copy_from_kernel_nofault(dst, src, dst_len - 1);
+    if (ret)
+        return ret;
+    dst[dst_len - 1] = '\0';
+#else
+    ret = probe_kernel_read(dst, src, dst_len - 1);
+    if (ret)
+        return ret;
+    dst[dst_len - 1] = '\0';
+#endif
+    /* Ensure it’s NUL-terminated if source exceeded buffer */
+    dst[dst_len - 1] = '\0';
     return 0;
 }
 
-
-static void __exit module_end(void)
+/* Architecture helpers to fetch the first argument and IP */
+static inline unsigned long get_ip_from_regs(struct pt_regs *regs)
 {
-    del_timer_sync(&scan_timer);
-
-    if (proc_entry)
-        proc_remove(proc_entry);
-
-    printk(KERN_INFO "[rkdetector] unloaded\n");
+#if defined(CONFIG_X86_64) || defined(CONFIG_X86)
+    return regs->ip;
+#elif defined(CONFIG_ARM64)
+    return regs->pc;
+#else
+    return 0;
+#endif
 }
 
-module_init(module_start);
+static inline const char *get_arg0_strptr(struct pt_regs *regs)
+{
+#if defined(CONFIG_X86_64)
+    return (const char *)regs->di;
+#elif defined(CONFIG_X86)
+    return (const char *)regs->ax; /* rarely used; x86 32-bit calling conv differs */
+#elif defined(CONFIG_ARM64)
+    return (const char *)regs->regs[0];
+#else
+#warning "Unsupported architecture: arg0 accessor not implemented."
+    return NULL;
+#endif
+}
 
-module_exit(module_end);
+/* kretprobe handlers for kallsyms_lookup_name */
+static char target_func[] = "kallsyms_lookup_name";
+
+static int entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+    struct lookup_event *ev;
+    const char *arg_name = get_arg0_strptr(regs);
+
+    ev = (struct lookup_event *)ri->data;
+    memset(ev, 0, sizeof(*ev));
+
+    if (arg_name) {
+        if (safe_copy_kstr(ev->name, arg_name, sizeof(ev->name)) == 0) {
+            if (strnstr(ev->name, WATCH1, sizeof(ev->name)) ||
+                strnstr(ev->name, WATCH2, sizeof(ev->name))) {
+                ev->matched = true;
+            }
+        }
+    }
+
+    ev->caller_ip = get_ip_from_regs(regs);
+    ev->pid = current->pid;
+    get_task_comm(ev->comm, current);
+    return 0;
+}
+
+static int ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+    struct lookup_event *ev = (struct lookup_event *)ri->data;
+
+    if (ev->matched) {
+        unsigned long ret = (unsigned long)regs_return_value(regs);
+        pr_warn("[kprobe-syscalltbl] pid=%d comm=%s requested=\"%s\" ip=0x%lx => addr=0x%lx\n",
+                ev->pid, ev->comm, ev->name, ev->caller_ip, ret);
+    }
+    return 0;
+}
+
+static struct kretprobe krp = {
+    .kp.symbol_name = target_func,
+    .handler = ret_handler,
+    .entry_handler = entry_handler,
+    .data_size = sizeof(struct lookup_event),
+    .maxactive = 64, /* adjust for expected concurrency */
+};
+
+static int __init kprobe_syscalltbl_init(void)
+{
+    int ret;
+
+    ret = register_kretprobe(&krp);
+    if (ret < 0) {
+        pr_err("register_kretprobe failed, returned %d\n", ret);
+        return ret;
+    }
+    pr_info("kretprobe registered for %s (maxactive=%d)\n", target_func, krp.maxactive);
+    return 0;
+}
+
+static void __exit kprobe_syscalltbl_exit(void)
+{
+    unregister_kretprobe(&krp);
+    pr_info("kretprobe unregistered: %d instances missed\n", krp.nmissed);
+}
+
+module_init(kprobe_syscalltbl_init);
+module_exit(kprobe_syscalltbl_exit);

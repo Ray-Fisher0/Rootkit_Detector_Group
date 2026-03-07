@@ -1,4 +1,4 @@
-obj-m += kprobe_syscalltbl_watch.o
+obj-m += test_kln.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)
