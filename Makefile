@@ -1,4 +1,4 @@
-obj-m += kprobe_syscalltbl_watch.o
+obj-m += kprobe_syscall_watch.o rkdetector.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)
