@@ -1,12 +1,5 @@
----
 
 # Rootkit Detector Group Project
-
-A Linux kernel module for detecting rootkit activity by monitoring suspicious access to the system call table. This project is designed for educational and research purposes, providing a robust foundation for kernel security analysis.
-
----
-
-# Rootkit Detector Project
 
 A Linux kernel module for detecting rootkit activity by monitoring suspicious access to the system call table. This project is designed for educational and research purposes, providing a robust foundation for kernel security analysis.
 
