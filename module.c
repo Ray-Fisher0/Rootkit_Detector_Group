@@ -1,37 +1,17 @@
-#include <linux/proc_fs.h>
-#include <linux/module.h>
-#include <linux/kprobes.h>
-#include <linux/uaccess.h>
-#include <linux/sched.h>
-#include <linux/version.h>
-
+#include <module.h>
 
 // SPDX-License-Identifier: GPL-2.0
 MODULE_DESCRIPTION("Kprobe-based watcher for kallsyms_lookup_name('sys_call_table')");
 MODULE_LICENSE("GPL");
 
-#define MAX_SYM_NAME   64
-#define WATCH1         "sys_call_table"
-#define WATCH2         "ia32_sys_call_table"
-
-#define ALERT_PROC_NAME "kallsyms_alert"
-#define ALERT_MSG_LEN 256
+// Global variables for kretprobe and alert message
 static char alert_msg[ALERT_MSG_LEN];
 static struct proc_dir_entry *alert_proc_entry;
 
-struct lookup_event {
-    char name[MAX_SYM_NAME];
-    bool matched;
-    unsigned long caller_ip;
-    pid_t pid;
-    char comm[TASK_COMM_LEN];
-};
-
-/*
- * Helpers to safely copy a C-string from a kernel pointer without faulting.
- */
+// Helpers to safely copy a C-string from a kernel pointer
 static int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
 {
+    // dst must be a kernel buffer, src is a user/kernel pointer we want to read safely
     int ret;
     if (!dst || !src || dst_len == 0)
         return -EINVAL;
@@ -47,7 +27,7 @@ static int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
         return ret;
     dst[dst_len - 1] = '\0';
 #endif
-    /* Ensure it’s NUL-terminated if source exceeded buffer */
+    // Ensure it’s NUL-terminated if source exceeded buffer
     dst[dst_len - 1] = '\0';
     return 0;
 }
@@ -69,7 +49,7 @@ static const struct proc_ops alert_proc_fops = {
     .proc_read = alert_proc_read,
 };
 
-/* Architecture helpers to fetch the first argument and IP */
+// Support for multiple architectures to get instruction pointer and first argument
 static inline unsigned long get_ip_from_regs(struct pt_regs *regs)
 {
 #if defined(CONFIG_X86_64) || defined(CONFIG_X86)
@@ -95,7 +75,7 @@ static inline const char *get_arg0_strptr(struct pt_regs *regs)
 #endif
 }
 
-/* kretprobe handlers for kallsyms_lookup_name */
+// kretprobe handlers for kallsyms_lookup_name
 static char target_func[] = "kallsyms_lookup_name";
 
 static int entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
@@ -140,6 +120,7 @@ static struct kretprobe krp = {
     .maxactive = 64, /* adjust for expected concurrency */
 };
 
+// Linux module initialization and exit
 static int __init kprobe_syscalltbl_init(void)
 {
     int ret;
