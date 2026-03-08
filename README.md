@@ -76,7 +76,7 @@ Follow these steps to build and run the kernel module:
 
 ## License
 
-This project is licensed under the GPL-2.0. See the LICENSE file for details.
+This project is licensed under the GPL-2.0.
 
 ## Contributing
 
