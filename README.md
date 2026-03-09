@@ -1,7 +1,11 @@
 
 # Rootkit Detector Group Project
 
-A Linux kernel module for detecting rootkit activity by monitoring suspicious access to the system call table. This project is designed for educational and research purposes, providing a robust foundation for kernel security analysis.
+In this project, the contributers each worked together to create similar yet different approaches for detecting rootkit activity to determine which one was the most effective for detection. What follows is the details of our work.
+
+For approach 1 what was made was a Linux kernel module for detecting rootkit activity by monitoring suspicious access to the system call table. This project is designed for educational and research purposes, providing a robust foundation for kernel security analysis.
+
+For approach 2 
 
 ---
 
@@ -42,7 +46,7 @@ The module is designed to detect and log attempts to access sensitive kernel sym
 
 ---
 
-## How to Run the Detector
+## How to Run the Detector For Approach1
 
 Follow these steps to build and run the kernel module:
 
@@ -52,31 +56,50 @@ Follow these steps to build and run the kernel module:
 
 2. **Load the module:**
    - Use `sudo insmod module.ko` to insert the module into the kernel.
+      - For kernel versions 4.0 and lower you can use module_scan as well with the command `sudo insmod module_scan.ko`
    - Check the kernel log (`dmesg`) for messages indicating successful registration with `sudo dmesg | tail`
 
 3. **Monitor alerts:**
    - Read the latest alert message from `/proc/kallsyms_alert` using `cat /proc/kallsyms_alert`.
    - Alerts will also appear in the kernel log.
 
-4. **Unload the module:**
+When you want to unload the module:
+
+- **Unload the module:**
    - Use `sudo rmmod module` to remove the module from the kernel.
+      - The same goes for module_scan
    - Check `dmesg` for cleanup messages.
 
 **Note:** Running kernel modules requires root privileges and can affect system stability. Only test on systems where you can safely experiment.
 
 ---
 
-## Project Structure
+
+## Explanation of `module_scan` for Approach1
+
+`module_scan.c` is a kernel module designed to monitor the system call table for suspicious modifications, which are often indicative of rootkit activity. It periodically scans the syscall table(s) and logs any changes to their entries, providing early detection of tampering attempts.
+
+**Important Limitation:**
+This module can only be used on Linux Kernel versions 4.0 and lower. Starting with kernel 4.1, critical symbols such as `kallsyms_lookup_name` and the system call table are no longer exported, making it impossible for this module to resolve their addresses without additional patches or workarounds. If you attempt to use `module_scan` on newer kernels, it will fail to locate the necessary symbols and will not function.
+
+**Summary:**
+- Use `module_scan.c` only on Linux Kernel 4.0 or lower.
+- It relies on exported kernel symbols to monitor syscall tables.
+- On newer kernels, consider alternative detection approaches or consult kernel documentation for symbol access limitations.
+
+## Project Structure for Approach1
 
 - `module.c` — Main kernel module implementation for rootkit detection.
 - `module.h` — Header file containing core definitions and function prototypes.
+- `module_scan.c` — Syscall table watcher for Linux Kernel 4.0 and lower.
+- `module_scan.h` — Header for syscall table watcher.
 - `Makefile` — Build instructions for compiling the kernel module.
 - `README.md` — Project documentation and instructions.
 - `test_module/` — Directory for test modules.
 
 ## License
 
-This project is licensed under the GPL-2.0.
+This project is licensed under the GPL-2.0. More information can be found under the LICENSE file.
 
 ## Contributing
 
