@@ -17,6 +17,10 @@
 #include <linux/sched.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/delay.h>
+#include <linux/string.h>
+#include <linux/jiffies.h>
+#include <linux/sched/task.h>
 
 /* Module parameters */
 extern unsigned int syscall_count;

@@ -29,8 +29,4 @@ ssize_t alert_proc_read(struct file *file, char __user *buf, size_t count, loff_
 
 unsigned long get_ip_from_regs(struct pt_regs *regs);
 const char *get_arg0_strptr(struct pt_regs *regs);
-
-extern char alert_msg[ALERT_MSG_LEN];
-extern struct proc_dir_entry *alert_proc_entry;
-
 #endif

@@ -1,7 +1,8 @@
-#include <module.h>
+#include "detect_kall.h"
 
 // SPDX-License-Identifier: GPL-2.0
 MODULE_DESCRIPTION("Kprobe-based watcher for kallsyms_lookup_name('sys_call_table')");
+MODULE_AUTHOR("Rootkit Detector Group");
 MODULE_LICENSE("GPL");
 
 // Global variables for kretprobe and alert message
@@ -9,7 +10,7 @@ static char alert_msg[ALERT_MSG_LEN];
 static struct proc_dir_entry *alert_proc_entry;
 
 // Helpers to safely copy a C-string from a kernel pointer
-static int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
+int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
 {
     // dst must be a kernel buffer, src is a user/kernel pointer we want to read safely
     int ret;
@@ -33,7 +34,7 @@ static int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
 }
 
 // /proc read handler to show the last alert message
-static ssize_t alert_proc_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
+ssize_t alert_proc_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 {
     int len;
     if (*ppos > 0)
@@ -50,7 +51,7 @@ static const struct proc_ops alert_proc_fops = {
 };
 
 // Support for multiple architectures to get instruction pointer and first argument
-static inline unsigned long get_ip_from_regs(struct pt_regs *regs)
+unsigned long get_ip_from_regs(struct pt_regs *regs)
 {
 #if defined(CONFIG_X86_64) || defined(CONFIG_X86)
     return regs->ip;
@@ -61,7 +62,7 @@ static inline unsigned long get_ip_from_regs(struct pt_regs *regs)
 #endif
 }
 
-static inline const char *get_arg0_strptr(struct pt_regs *regs)
+const char *get_arg0_strptr(struct pt_regs *regs)
 {
 #if defined(CONFIG_X86_64)
     return (const char *)regs->di;
@@ -134,6 +135,8 @@ static int __init kprobe_syscalltbl_init(void)
     alert_proc_entry = proc_create(ALERT_PROC_NAME, 0444, NULL, &alert_proc_fops);
     if (!alert_proc_entry) {
         pr_err("Failed to create /proc/%s\n", ALERT_PROC_NAME);
+        unregister_kretprobe(&krp);
+        return -ENOMEM;
     }
     alert_msg[0] = '\0';
     return 0;
@@ -142,7 +145,7 @@ static int __init kprobe_syscalltbl_init(void)
 static void __exit kprobe_syscalltbl_exit(void)
 {
     unregister_kretprobe(&krp);
-    if (alert_proc_entry)
+    pr_info("kretprobe unregistered: %d instances missed (exceeded maxactive concurrency limit)\n", krp.nmissed);
         proc_remove(alert_proc_entry);
     pr_info("kretprobe unregistered: %d instances missed\n", krp.nmissed);
 }
