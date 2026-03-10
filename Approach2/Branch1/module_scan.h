@@ -15,6 +15,8 @@
 #include <linux/bug.h>
 #include <linux/rcupdate.h>
 #include <linux/sched.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 /* Module parameters */
 extern unsigned int syscall_count;

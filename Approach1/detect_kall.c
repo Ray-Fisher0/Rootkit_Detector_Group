@@ -135,6 +135,8 @@ static int __init kprobe_syscalltbl_init(void)
     alert_proc_entry = proc_create(ALERT_PROC_NAME, 0444, NULL, &alert_proc_fops);
     if (!alert_proc_entry) {
         pr_err("Failed to create /proc/%s\n", ALERT_PROC_NAME);
+        unregister_kretprobe(&krp);
+        return -ENOMEM;
     }
     alert_msg[0] = '\0';
     return 0;
@@ -143,7 +145,7 @@ static int __init kprobe_syscalltbl_init(void)
 static void __exit kprobe_syscalltbl_exit(void)
 {
     unregister_kretprobe(&krp);
-    if (alert_proc_entry)
+    pr_info("kretprobe unregistered: %d instances missed (exceeded maxactive concurrency limit)\n", krp.nmissed);
         proc_remove(alert_proc_entry);
     pr_info("kretprobe unregistered: %d instances missed\n", krp.nmissed);
 }

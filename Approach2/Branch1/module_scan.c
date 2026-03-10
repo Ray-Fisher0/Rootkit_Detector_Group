@@ -60,6 +60,72 @@ static struct tbl_watch tw[MAX_TABLES] = {
 static struct delayed_work scan_work;
 static kln_t kln = NULL;
 
+/* ===== /proc interface ===== */
+
+static struct proc_dir_entry *proc_entry;
+
+static void *syscall_watch_seq_start(struct seq_file *s, loff_t *pos)
+{
+    if (*pos >= MAX_TABLES)
+        return NULL;
+    return &tw[*pos];
+}
+
+static void *syscall_watch_seq_next(struct seq_file *s, void *v, loff_t *pos)
+{
+    (*pos)++;
+    if (*pos >= MAX_TABLES)
+        return NULL;
+    return &tw[*pos];
+}
+
+static void syscall_watch_seq_stop(struct seq_file *s, void *v)
+{
+    /* Nothing to do */
+}
+
+static int syscall_watch_seq_show(struct seq_file *s, void *v)
+{
+    struct tbl_watch *w = (struct tbl_watch *)v;
+    int i;
+    char sym[SYMNAME_LEN];
+
+    seq_printf(s, "Table: %s\n", w->name);
+    seq_printf(s, "Active: %s\n", w->active ? "yes" : "no");
+    if (w->active) {
+        seq_printf(s, "Address: 0x%lx\n", w->addr);
+        seq_printf(s, "Syscall count: %u\n", syscall_count);
+        seq_printf(s, "First 10 syscalls:\n");
+        for (i = 0; i < 10 && i < syscall_count; i++) {
+            addr_to_symbol(w->tbl[i], sym, sizeof(sym));
+            seq_printf(s, "  [%d] %s\n", i, sym);
+        }
+    }
+    seq_printf(s, "\n");
+
+    return 0;
+}
+
+static const struct seq_operations syscall_watch_seq_ops = {
+    .start = syscall_watch_seq_start,
+    .next  = syscall_watch_seq_next,
+    .stop  = syscall_watch_seq_stop,
+    .show  = syscall_watch_seq_show,
+};
+
+static int syscall_watch_proc_open(struct inode *inode, struct file *file)
+{
+    return seq_open(file, &syscall_watch_seq_ops);
+}
+
+static const struct file_operations syscall_watch_proc_fops = {
+    .owner   = THIS_MODULE,
+    .open    = syscall_watch_proc_open,
+    .read    = seq_read,
+    .llseek  = seq_lseek,
+    .release = seq_release,
+};
+
 /* ===== Scanning logic ===== */
 static void scan_once(struct tbl_watch *w)
 {
@@ -167,6 +233,15 @@ static int __init syscalltbl_watch_init(void)
     INIT_DELAYED_WORK(&scan_work, scan_workfn);
     schedule_delayed_work(&scan_work, msecs_to_jiffies(interval_ms));
 
+    proc_entry = proc_create("syscall_watch", 0444, NULL, &syscall_watch_proc_fops);
+    if (!proc_entry) {
+        pr_err("[syscalltbl-watch] failed to create /proc/syscall_watch\n");
+        cancel_delayed_work_sync(&scan_work);
+        for (t = 0; t < MAX_TABLES; t++)
+            teardown_table(&tw[t]);
+        return -ENOMEM;
+    }
+
     pr_info("[syscalltbl-watch] initialized (interval_ms=%u, syscall_count=%u)\n",
             interval_ms, syscall_count);
     return 0;
@@ -178,6 +253,8 @@ static void __exit syscalltbl_watch_exit(void)
     cancel_delayed_work_sync(&scan_work);
     for (t = 0; t < MAX_TABLES; t++)
         teardown_table(&tw[t]);
+    if (proc_entry)
+        proc_remove(proc_entry);
     pr_info("[syscalltbl-watch] unloaded.\n");
 }
 
