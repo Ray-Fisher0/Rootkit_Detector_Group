@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL
-#include <module_scan.h>
+#include "module_scan.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Rootkit Detector Group");
@@ -14,11 +14,11 @@ MODULE_DESCRIPTION("Simple watcher for sys_call_table modifications");
  *
  * interval_ms: periodic check interval.
  */
-static unsigned int syscall_count = 512;
+unsigned int syscall_count = 512;
 module_param(syscall_count, uint, 0444);
 MODULE_PARM_DESC(syscall_count, "Number of syscalls to monitor (default 512)");
 
-static unsigned int interval_ms = 1000;
+unsigned int interval_ms = 1000;
 module_param(interval_ms, uint, 0644);
 MODULE_PARM_DESC(interval_ms, "Scan interval in milliseconds (default 1000)");
 

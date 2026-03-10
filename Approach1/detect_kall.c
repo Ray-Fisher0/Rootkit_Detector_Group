@@ -1,4 +1,4 @@
-#include <module.h>
+#include "detect_kall.h"
 
 // SPDX-License-Identifier: GPL-2.0
 MODULE_DESCRIPTION("Kprobe-based watcher for kallsyms_lookup_name('sys_call_table')");
@@ -10,7 +10,7 @@ static char alert_msg[ALERT_MSG_LEN];
 static struct proc_dir_entry *alert_proc_entry;
 
 // Helpers to safely copy a C-string from a kernel pointer
-static int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
+int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
 {
     // dst must be a kernel buffer, src is a user/kernel pointer we want to read safely
     int ret;
@@ -34,7 +34,7 @@ static int safe_copy_kstr(char *dst, const void *src, size_t dst_len)
 }
 
 // /proc read handler to show the last alert message
-static ssize_t alert_proc_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
+ssize_t alert_proc_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 {
     int len;
     if (*ppos > 0)
@@ -51,7 +51,7 @@ static const struct proc_ops alert_proc_fops = {
 };
 
 // Support for multiple architectures to get instruction pointer and first argument
-static inline unsigned long get_ip_from_regs(struct pt_regs *regs)
+unsigned long get_ip_from_regs(struct pt_regs *regs)
 {
 #if defined(CONFIG_X86_64) || defined(CONFIG_X86)
     return regs->ip;
@@ -62,7 +62,7 @@ static inline unsigned long get_ip_from_regs(struct pt_regs *regs)
 #endif
 }
 
-static inline const char *get_arg0_strptr(struct pt_regs *regs)
+const char *get_arg0_strptr(struct pt_regs *regs)
 {
 #if defined(CONFIG_X86_64)
     return (const char *)regs->di;
