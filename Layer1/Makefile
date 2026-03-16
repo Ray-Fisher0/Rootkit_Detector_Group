@@ -1,4 +1,4 @@
-obj-m += module.o
+obj-m += detect_kall.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)

@@ -57,6 +57,8 @@ Additionally a second Linux kernel module was created to detect rootkit activity
 
 Follow these steps to build and run the kernel module:
 
+**Note** you must be on Ubuntu versions 24.04 or lower for this to work
+
 1. **Build the module:**
    - Ensure you have the necessary kernel headers installed for your system.
    - Run `make` in the project directory to compile the module.
@@ -74,12 +76,35 @@ Follow these steps to build and run the kernel module:
 When you want to unload the module:
 
 - **Unload the module:**
-   - Use `sudo rmmod detect_kall` to remove the module from the kernel.
+   - Use `sudo rmmod detect_kall.ko` to remove the module from the kernel.
       - The same goes for module_scan
    - Check `dmesg` for cleanup messages.
 
 **Note:** Running kernel modules requires root privileges and can affect system stability. Only test on systems where you can safely experiment.
 
+## How to Run the Detector For Layer 1 and 2 for ARM
+
+Follow these steps to build and run the kernel module:
+
+1. **Build the module:**
+   - Ensure you have the necessary kernel headers installed for your system.
+   - Run `make` in the project directory to compile the module.
+
+2. **Load the module:**
+   - Navigate to ARM folder in Layer2
+   - Use `sudo insmod detector.ko` to insert the Layer1 module into the kernel.
+   - Check the kernel log (`dmesg`) for messages indicating successful registration with `sudo dmesg | tail`
+
+3. **Monitor alerts:**
+   - Read the latest alert message from `/proc/rootkit_alerts` using `cat /proc/rootkit_alerts`.
+   - Alerts will also appear in the kernel log.
+
+When you want to unload the module:
+
+- **Unload the module:**
+   - Use `sudo rmmod detector.ko` to remove the module from the kernel.
+      - The same goes for module_scan
+   - Check `dmesg` for cleanup messages.
 ---
 
 ## Project Structure
